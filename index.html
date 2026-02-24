@@ -1,8 +1,12 @@
 <!DOCTYPE html>
 <html lang="fr">
-<head> <base href="/catalogue-com-diens-v3/">
+<head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- 🔹 Base pour GitHub Pages -->
+    <base href="/catalogue-com-diens-v3/">
+
     <!-- ✅ SECURITY: Anti-flash script -->
     <script>
     (function(){
@@ -12,9 +16,11 @@
         document.documentElement.setAttribute('data-theme', effective);
     })();
     </script>
+
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
+
     <!-- ✅ SECURITY: Content-Security-Policy Header -->
     <meta http-equiv="Content-Security-Policy" content="
         default-src 'self';
@@ -26,11 +32,11 @@
         frame-ancestors 'none';
         base-uri 'self';
         form-action 'self';">
-    <!-- ✅ SECURITY: Additional Security Headers -->
+
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="referrer" content="strict-origin-when-cross-origin">
     <meta name="permissions-policy" content="geolocation=(), microphone=(), camera=()">
-    
+
     <meta name="app-version" content="20260224013759">
     <script>
     (function() {
@@ -45,13 +51,20 @@
         localStorage.setItem('__catalogue_v__', V);
     })();
     </script>
+
     <title>Catalogue Comédiens</title>
+
+    <!-- 🔹 CSS corrigé avec chemins relatifs -->
     <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/styles.css">
+
 </head>
 <body>
-    <!-- Reste du HTML inchangé -->
-    <!-- ...existing HTML content... -->
+    <!-- 🔹 Body principal -->
+    <div id="app"></div>
+
+    <!-- 🔹 JS principal -->
+    <script src="js/app.js"></script>
 </body>
 </html>
