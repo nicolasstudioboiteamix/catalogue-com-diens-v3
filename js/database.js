@@ -1,5 +1,3 @@
-
-
 let currentDatabaseType = 'tous';
 
 function showDatabaseType(type) {
@@ -104,18 +102,18 @@ function displayDatabaseTable(comedians) {
         if (comedian.chant)            competences.push('Chant');
 
         const classementBadge = comedian.classement
-            ? `<span class="tag" style="background:rgba(233,69,96,0.2);">${comedian.classement}</span>`
+            ? `<span class="tag" style="background:rgba(233,69,96,0.2);">${Utils.escapeHtml(comedian.classement)}</span>`
             : '<span style="color:var(--text-muted);">-</span>';
 
         const tr = document.createElement('tr');
-        const e = Utils.escapeHtml;
+        // ✅ SECURITY: Use escapeHtml to prevent XSS
         tr.innerHTML = `
-            <td><strong>${e(comedian.name)}</strong></td>
-            <td>${e(comedian.sexe)}</td>
-            <td>${e(comedian.email)}</td>
-            <td>${e(comedian.phone || '-')}</td>
+            <td><strong>${Utils.escapeHtml(comedian.name)}</strong></td>
+            <td>${Utils.escapeHtml(comedian.sexe)}</td>
+            <td>${Utils.escapeHtml(comedian.email)}</td>
+            <td>${Utils.escapeHtml(comedian.phone || '-')}</td>
             <td>${classementBadge}</td>
-            <td><small>${e(competences.join(', ') || '-')}</small></td>
+            <td><small>${Utils.escapeHtml(competences.join(', ') || '-')}</small></td>
             <td><span class="tag ${comedian.active ? 'status-active' : 'status-inactive'}">${comedian.active ? 'Actif' : 'Inactif'}</span></td>
             <td>
                 <button class="btn-icon btn-small" onclick="showComedianDetail(${comedian.id})" title="Voir">👁️</button>
@@ -170,7 +168,7 @@ function exportCSV(comedians) {
         const prenom = nameParts[0];
         const nom    = nameParts.slice(1).join(' ') || nameParts[0];
         const b = v => v ? 'oui' : 'non';
-        csv += `"${nom}","${prenom}","${c.sexe}","${c.email}","${c.phone||''}","${c.classement||''}",`;
+        csv += `"${nom}","${prenom}","${c.sexe}","${c.email}","${c.phone||''}","${c.classement||'"}",`;
         csv += `"${b(c.seances_dirigees)}","${b(c.voix_off)}","${b(c.voix_jouee)}","${b(c.voix_enfant)}","${b(c.chant)}",`;
         csv += `"${b(c.voix_jeune)}","${b(c.voix_adulte)}","${b(c.voix_mature)}","${b(c.voix_accent)}",`;
         csv += `"${b(c.timbre_grave)}","${b(c.timbre_medium)}","${b(c.timbre_aigu)}","${b(c.timbre_texture)}",`;
@@ -186,7 +184,6 @@ function exportJSON(comedians) {
     downloadFile(JSON.stringify(data, null, 2), 'catalogue-comediens.json', 'application/json');
 }
 
-// ── Import JSON ──────────────────────────────────────────────
 async function importJSON(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -218,7 +215,15 @@ async function importJSON(event) {
 
         for (const raw_c of raw) {
             const email = (raw_c.email || '').trim().toLowerCase();
-            if (!email || !raw_c.name) { skipped++; continue; }
+            
+            // ✅ SECURITY: Validate email format
+            if (!Utils.isValidEmail(email)) {
+                console.warn(`❌ Email invalide: ${email}`);
+                skipped++;
+                continue;
+            }
+            
+            if (!raw_c.name || raw_c.name.toString().trim() === '') { skipped++; continue; }
             if (existingEmails.includes(email)) { skipped++; continue; }
 
             const password = Utils.generateSecurePassword(12);
@@ -280,7 +285,6 @@ async function importJSON(event) {
 
         const plainPwds = {};
         for (const c of newComedians) plainPwds[c.email] = c.password;
-        // Les mots de passe sont hashés côté serveur avec sel (username)
 
         try {
             const insertedRows = await SupabaseDB.bulkInsertComedians(newComedians);
@@ -301,7 +305,7 @@ async function importJSON(event) {
                 newUsers.push({
                     username:      uname,
                     email:         comedian.email,
-                    _plainPassword: plainPwds[comedian.email], // hash avec sel côté serveur
+                    _plainPassword: plainPwds[comedian.email],
                     role:          'comedian',
                     comedianId,
                     active:        true,
@@ -384,12 +388,19 @@ async function parseCSV(csv) {
         const email  = values[3].trim().toLowerCase();
         const tel    = values[4].trim();
 
+        // ✅ SECURITY: Validate email format
+        if (!Utils.isValidEmail(email)) {
+            console.warn(`❌ Email invalide à ligne ${i + 1}: ${email}`);
+            skipped++;
+            continue;
+        }
+
         const classementRaw = values[5] ? values[5].trim().toLowerCase() : '';
         const classement    = classementRaw === 'interne' ? 'interne' : classementRaw === 'externe' ? 'externe' : '';
 
         const yesNo = v => !!(v && (v.trim().toLowerCase().includes('oui') || v.trim().toLowerCase() === 'yes'));
 
-        if (!email || existingEmails.includes(email)) { skipped++; continue; }
+        if (existingEmails.includes(email)) { skipped++; continue; }
 
         const password = Utils.generateSecurePassword(12);
         const newComedian = {
@@ -424,8 +435,6 @@ async function parseCSV(csv) {
         plainPasswords[c.email] = c.password;
     }
 
-    // Les mots de passe sont hashés côté serveur avec sel (username)
-
     try {
         const insertedRows = await SupabaseDB.bulkInsertComedians(newComedians);
 
@@ -447,7 +456,7 @@ async function parseCSV(csv) {
             newUsers.push({
                 username:      uname,
                 email:         comedian.email,
-                _plainPassword: plainPasswords[comedian.email], // hash avec sel côté serveur
+                _plainPassword: plainPasswords[comedian.email],
                 role:       'comedian',
                 comedianId: comedianId,
                 active:     true,
@@ -473,7 +482,7 @@ async function parseCSV(csv) {
             credentialsList += `\n  • ${u.username} / ${plain}`;
         }
 
-        alert(`✅ Import terminé !\n\n📊 Comédiens importés : ${newComedians.length}\n👥 Utilisateurs créés : ${newUsers.length}\n⚠️ Ignorés (doublons) : ${skipped}\n\n🔑 IDENTIFIANTS CRÉÉS (notez-les) :${credentialsList}\n\nVous pouvez aussi envoyer les identifiants via le bouton 📧 dans la liste des utilisateurs.`);
+        alert(`✅ Import terminé !\n\n📊 Comédiens importés : ${newComedians.length}\n👥 Utilisateurs créés : ${newUsers.length}\n⚠️ Ignorés (doublons) : ${skipped}${credentialsList ? '\n\n🔑 IDENTIFIANTS :' + credentialsList : ''}`);
         loadDatabaseView();
     } catch(err) {
         alert('❌ Erreur import: ' + (err.message || err));
@@ -492,7 +501,6 @@ async function deleteComedianFromDB(comedianId) {
     }
 }
 
-// Exposition globale des fonctions
 window.deleteDatabaseByType = deleteDatabaseByType;
 window.exportDatabase = exportDatabase;
 window.showDatabaseType = showDatabaseType;
