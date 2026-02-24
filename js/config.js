@@ -1,7 +1,7 @@
 const SUPABASE_CONFIG = {
     EDGE_URL:     'https://rwvmzncnxvxdafonabfh.supabase.co/functions/v1/api',
-    SUPABASE_URL: 'https://rwvmzncnxvxdafonabfh.supabase.co',
-    ANON_KEY:     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ3dm16bmNueHZ4ZGFmb25hYmZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NTE4NzEsImV4cCI6MjA4NzAyNzg3MX0.sCWFCbvU9vhvi8cu-tf4m66eyXNEca6iZbU-mJprUVw'
+    SUPABASE_URL: 'https://rwvmzncnxvxdafonabfh.supabase.co'
+    // ✅ ANON_KEY REMOVED FOR SECURITY - All API calls now proxied through Edge Function
 };
 
 const CONFIG = {
@@ -38,19 +38,16 @@ const Utils = {
     capitalize(s) { if (!s) return ''; return s.charAt(0).toUpperCase()+s.slice(1).toLowerCase(); },
     generateId() { return Date.now()+Math.floor(Math.random()*1000); },
     generateSecurePassword(length=12) {
-        // Utilise crypto.getRandomValues() pour des mots de passe cryptographiquement sûrs
         const upper  = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
         const lower  = 'abcdefghijklmnopqrstuvwxyz';
         const digits = '0123456789';
         const special= '!@#$%&*';
         const all    = upper + lower + digits + special;
         const rand   = (charset) => charset[crypto.getRandomValues(new Uint32Array(1))[0] % charset.length];
-        // Garantir au moins 1 de chaque type
         let chars = [rand(upper), rand(lower), rand(digits), rand(special)];
         const extra = new Uint32Array(length - 4);
         crypto.getRandomValues(extra);
         for (let i = 0; i < length - 4; i++) chars.push(all[extra[i] % all.length]);
-        // Mélange Fisher-Yates avec crypto
         const shuffleArr = new Uint32Array(chars.length);
         crypto.getRandomValues(shuffleArr);
         for (let i = chars.length - 1; i > 0; i--) {
@@ -60,6 +57,11 @@ const Utils = {
         return chars.join('');
     },
     simulateEmail(to,subject,body) {
+        // ✅ SECURITY: Validate email before opening mailto
+        if (!this.isValidEmail(to)) {
+            alert('Email invalide');
+            return;
+        }
         const a=document.createElement('a');
         a.href='mailto:'+encodeURIComponent(to)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
         a.style.display='none'; document.body.appendChild(a); a.click();
@@ -67,21 +69,71 @@ const Utils = {
     },
     replaceEmailVariables(tpl,vars) {
         let r=tpl;
-        for(const[k,v] of Object.entries(vars)) r=r.replace(new RegExp(`{{${k}}}`,'g'),v||'');
+        for(const[k,v] of Object.entries(vars)) {
+            // ✅ SECURITY: Escape HTML before injecting variables
+            const safeValue = this.escapeHtml(String(v || ''));
+            r=r.replace(new RegExp(`{{${k}}}`,'g'),safeValue);
+        }
         return r;
     },
-    // Échapper le HTML pour prévenir les XSS dans innerHTML
+    // ✅ SECURITY: Enhanced escapeHtml to prevent XSS
     escapeHtml(str) {
         if (str == null) return '';
-        return String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;',
+            '/': '&#x2F;'
+        };
+        return String(str).replace(/[&<>"'\/]/g, (s) => map[s]);
+    },
+    
+    // ✅ SECURITY: NEW - Validate email format
+    isValidEmail(email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
+    },
+    
+    // ✅ SECURITY: NEW - Sanitize URLs
+    sanitizeUrl(url) {
+        if (!url) return '';
+        try {
+            const u = new URL(url);
+            if (!['http:', 'https:', 'mailto:'].includes(u.protocol)) {
+                return '';
+            }
+            return url;
+        } catch {
+            if (url.startsWith('/') || url.startsWith('./') || url.startsWith('../')) {
+                return url;
+            }
+            return '';
+        }
+    },
+    
+    // ✅ SECURITY: NEW - Validate JSON
+    isValidJSON(str) {
+        try {
+            JSON.parse(str);
+            return true;
+        } catch {
+            return false;
+        }
     }
 };
 
 function addLog(username,role,action) {
-    SupabaseDB.insertLog({timestamp:new Date().toISOString(),username:username||'système',role:role||'',action:action||''}).catch(()=>{});
+    // ✅ SECURITY: Escape log entries
+    const safeUsername = Utils.escapeHtml(username || 'système');
+    const safeRole = Utils.escapeHtml(role || '');
+    const safeAction = Utils.escapeHtml(action || '');
+    
+    SupabaseDB.insertLog({
+        timestamp:new Date().toISOString(),
+        username:safeUsername,
+        role:safeRole,
+        action:safeAction
+    }).catch(()=>{});
 }
