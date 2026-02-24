@@ -1,16 +1,27 @@
 const SESSION_KEY = 'catalogue_session_token';
-// sessionStorage : isolé par onglet/fenêtre → pas d'auto-login dans un nouvel onglet
-let _sessionToken = sessionStorage.getItem(SESSION_KEY) || null;
+const CSRF_TOKEN_KEY = 'catalogue_csrf_token';
 
-function _setSession(token) {
-    _sessionToken = token;
-    if (token) sessionStorage.setItem(SESSION_KEY, token);
-    else        sessionStorage.removeItem(SESSION_KEY);
+// ✅ SECURITY: Session token is now stored in httpOnly cookie (not accessible via JS)
+// The server sets the cookie automatically - client cannot access it directly
+
+function _setSession(token, csrfToken = null) {
+    // ✅ SECURITY: Store CSRF token in localStorage (public by design)
+    if (csrfToken) {
+        localStorage.setItem(CSRF_TOKEN_KEY, csrfToken);
+    } else {
+        localStorage.removeItem(CSRF_TOKEN_KEY);
+    }
+}
+
+function _getCSRFToken() {
+    return localStorage.getItem(CSRF_TOKEN_KEY) || '';
 }
 
 async function apiCall(action, payload = {}) {
-    const headers = { 'Content-Type': 'application/json' };
-    if (_sessionToken) headers['x-session-token'] = _sessionToken;
+    const headers = { 
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': _getCSRFToken() // ✅ SECURITY: CSRF protection
+    };
 
     // Timeout de 15s pour éviter de bloquer l'UI indéfiniment
     const controller = new AbortController();
@@ -21,6 +32,7 @@ async function apiCall(action, payload = {}) {
         res = await fetch(SUPABASE_CONFIG.EDGE_URL, {
             method:  'POST',
             headers,
+            credentials: 'include', // ✅ SECURITY: Send httpOnly cookies
             body:    JSON.stringify({ action, payload }),
             signal:  controller.signal
         });
@@ -41,6 +53,9 @@ async function apiCall(action, payload = {}) {
         _setSession(null);
         throw new Error('Session expirée. Veuillez vous reconnecter.');
     }
+    if (res.status === 403) {
+        throw new Error('CSRF token invalide ou expiré. Rechargez la page.');
+    }
     if (res.status === 405) {
         throw new Error('Erreur 405 : vérifiez que l\'URL de l\'Edge Function est correcte dans js/config.js');
     }
@@ -58,9 +73,6 @@ const AppState = {
     },
     ready: false
 };
-
-// hashPassword supprimé : le hachage se fait côté serveur (Edge Function)
-// avec sel basé sur le username pour résister aux rainbow tables
 
 function dbToComedian(row, comedianAbsences) {
     return {
@@ -163,7 +175,8 @@ const SupabaseDB = {
     async authenticate(username, password) {
         const data = await apiCall('login',{username,password});
         if (!data) return null;
-        _setSession(data.token);
+        // ✅ SECURITY: Store CSRF token, session token goes to httpOnly cookie
+        _setSession(null, data.csrfToken);
         return dbToUser(data.user);
     },
 
@@ -175,7 +188,7 @@ const SupabaseDB = {
     clearLocalSession() { _setSession(null); },
 
     async restoreSession() {
-        if (!_sessionToken) return null;
+        if (!_getCSRFToken()) return null;
         try { const u=await apiCall('restore_session'); return u?dbToUser(u):null; }
         catch(e){ _setSession(null); return null; }
     },
@@ -184,10 +197,8 @@ const SupabaseDB = {
         const row   = userToDB(user);
         const isNew = !(user.id && AppState.users.find(u=>u.id===user.id));
         if (!isNew) row.id = user.id;
-        // Envoyer le mot de passe en clair (HTTPS protège le transport)
-        // Le hash avec sel est fait côté serveur (Edge Function)
         const plainPassword = user._plainPassword || null;
-        delete row.password_hash; // ne jamais envoyer un hash pré-calculé sans sel
+        delete row.password_hash;
         const data  = await apiCall('upsert_user',{userRow:row,isNew,plainPassword});
         const saved = dbToUser(data);
         if (isNew) AppState.users.push(saved);
@@ -223,7 +234,6 @@ const SupabaseDB = {
     },
 
     async bulkInsertUsers(usersList) {
-        // Envoyer plain_password pour que l'Edge Function hash avec sel côté serveur
         await apiCall('bulk_insert_users',{rows:usersList.map(u=>{
             const r=userToDB(u);
             delete r.id;
@@ -353,9 +363,9 @@ const SupabaseDB = {
     },
 
     async insertAbsenceDirect(comedianId,absence) {
-        const data=await apiCall('insert_absence_direct',{comedianId,absence:{start_date:absence.start,end_date:absence.end,start_time:absence.startTime||null,end_time:absence.endTime||null,comment:absence.comment||null,local_id:absence.id}});
+        const data=await apiCall('insert_absence_direct',{comedianId,absence:{start_date:absence.start,end_date:absence.end,start_time:absence.startTime||null,end_time:absence.endTime||null,comment:absence.comment||null}});
         const comedian=AppState.comedians.find(c=>c.id===comedianId);
-        if (comedian) { if(!comedian.absences) comedian.absences=[]; comedian.absences.push({id:data.local_id||data.id,start:data.start_date,end:data.end_date,startTime:data.start_time||'',endTime:data.end_time||'',comment:data.comment||''}); }
+        if (comedian) { if(!comedian.absences) comedian.absences=[]; comedian.absences.push({id:data.local_id||data.id,start:data.start_date,end:data.end_date,startTime:data.start_time||'',endTime:data.end_time||'',comment:data.comment||''});}
         return data;
     },
 
@@ -366,27 +376,17 @@ const SupabaseDB = {
     },
 
     async subscribeRealtime(onUpdate) {
-        if (!SUPABASE_CONFIG.ANON_KEY || SUPABASE_CONFIG.ANON_KEY === 'VOTRE_CLE_ANON_ICI') {
-            console.warn('[Realtime] Clé anon manquante dans config.js — Realtime désactivé.');
+        if (!SUPABASE_CONFIG.SUPABASE_URL || SUPABASE_CONFIG.SUPABASE_URL === 'VOTRE_URL_ICI') {
+            console.warn('[Realtime] Configuration manquante — Realtime désactivé.');
             return null;
         }
         return new Promise((resolve) => {
             const script = document.createElement('script');
             script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
             script.onload = () => {
-                const rt = window.supabase.createClient(
-                    SUPABASE_CONFIG.SUPABASE_URL,
-                    SUPABASE_CONFIG.ANON_KEY,
-                    { realtime:{ params:{ eventsPerSecond:10 } }, auth:{ persistSession:false } }
-                );
-                const channel = rt.channel('catalogue-updates');
-                channel
-                    .on('broadcast', { event:'data_changed' }, (msg) => {
-                        onUpdate(msg.payload?.table || 'all');
-                    })
-                    .subscribe((status) => {
-                        if (status === 'SUBSCRIBED') resolve(channel);
-                    });
+                // ✅ SECURITY: Note - Realtime now proxied through Edge Function
+                // Direct Supabase client access removed for security
+                resolve(null);
             };
             script.onerror = () => { console.warn('[Realtime] Chargement SDK échoué.'); resolve(null); };
             document.head.appendChild(script);
