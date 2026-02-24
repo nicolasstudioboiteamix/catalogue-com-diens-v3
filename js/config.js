@@ -1,7 +1,7 @@
 const SUPABASE_CONFIG = {
     EDGE_URL:     'https://rwvmzncnxvxdafonabfh.supabase.co/functions/v1/api',
     SUPABASE_URL: 'https://rwvmzncnxvxdafonabfh.supabase.co',
-    ANON_KEY:     'VOTRE_CLE_ANON_ICI'
+    ANON_KEY:     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFoZ2tmdHRsZXNkcm1wb3NybXR0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE5Mzg4MjQsImV4cCI6MjA4NzUxNDgyNH0.jNrmux_S-gJwNlsYrM0GI1CJwj_EadeIlyx0inVfhnI'
 };
 
 const CONFIG = {
